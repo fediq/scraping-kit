@@ -2,14 +2,13 @@ name := "scraping-kit"
 
 lazy val commonSettings = Seq(
   organization := "ru.fediq.scrapingkit",
-  version := "0.2.0-SNAPSHOT",
+  version := "0.2.0",
   scalaVersion := "2.11.8",
-  publishTo := Some(Resolver.mavenLocal),
   resolvers ++= Seq(
-    Resolver.bintrayRepo("hajile", "maven"),
-    Resolver.bintrayRepo("fediq", "maven"),
-    "SpinGo OSS" at "http://spingo-oss.s3.amazonaws.com/repositories/releases"
-  )
+    Resolver.bintrayRepo("hajile", "maven"), // Akka DNS
+    Resolver.bintrayRepo("fediq", "maven") // Fediq's repository
+  ),
+  licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
 )
 
 lazy val `scraping-kit-api` = project
@@ -40,8 +39,12 @@ lazy val `scraping-kit-test` = project
   )
   .settings(commonSettings)
 
+// TODO unpublish root and tests when the following becomes fixed:
+// https://github.com/sbt/sbt-bintray/issues/93
+
 lazy val `scraping-kit` = project
   .in(file("."))
+  .settings(commonSettings)
   .aggregate(
     `scraping-kit-api`,
     `scraping-kit-platform`,
