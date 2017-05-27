@@ -12,30 +12,40 @@ lazy val commonSettings = Seq(
   )
 )
 
-lazy val apiProject = project
+lazy val `scraping-kit-api` = project
   .in(file("scraping-kit-api"))
   .settings(commonSettings)
 
-lazy val platformProject = project
+lazy val `scraping-kit-platform` = project
   .in(file("scraping-kit-platform"))
-  .dependsOn(apiProject)
+  .dependsOn(`scraping-kit-api`)
   .settings(commonSettings)
 
-lazy val bloomPluginProject = project
+lazy val `scraping-kit-plugin-bloom` = project
   .in(file("scraping-kit-plugin-bloom"))
-  .dependsOn(apiProject)
+  .dependsOn(`scraping-kit-api`)
   .settings(commonSettings)
 
-lazy val rmqPluginProject = project
+lazy val `scraping-kit-plugin-rmq` = project
   .in(file("scraping-kit-plugin-rmq"))
-  .dependsOn(apiProject)
+  .dependsOn(`scraping-kit-api`)
   .settings(commonSettings)
 
-lazy val rootProject = project
+lazy val `scraping-kit-test` = project
+  .in(file("scraping-kit-test"))
+  .dependsOn(
+    `scraping-kit-platform`,
+    `scraping-kit-plugin-bloom`,
+    `scraping-kit-plugin-rmq`
+  )
+  .settings(commonSettings)
+
+lazy val `scraping-kit` = project
   .in(file("."))
   .aggregate(
-    apiProject,
-    platformProject,
-    bloomPluginProject,
-    rmqPluginProject
+    `scraping-kit-api`,
+    `scraping-kit-platform`,
+    `scraping-kit-plugin-bloom`,
+    `scraping-kit-plugin-rmq`,
+    `scraping-kit-test`
   )

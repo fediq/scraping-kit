@@ -1,5 +1,6 @@
 package ru.fediq.scrapingkit.platform
 
+import akka.actor.Status.Failure
 import akka.http.scaladsl.model._
 import akka.pattern.pipe
 import ru.fediq.scrapingkit._
@@ -109,7 +110,7 @@ class QueueingActor(
       if (outdated.nonEmpty) {
         log.warning(s"${outdated.size} downloads timed out")
         outdated.foreach(uri => log.debug(s"Download timed out: $uri"))
-        queueFailedAllTimer.timeFuture(queue.failedAll(outdated))
+        queueFailedAllTimer.timeFuture(queue.failedAll(outdated)).pipeFailures
         outdatedMeter.mark(outdated.size)
       }
 
@@ -133,7 +134,7 @@ class QueueingActor(
       toRun.foreach(req => downloadingActor ! req)
 
       drownMeter.mark(toDrown.size)
-      queueDrownTimer.timeFuture(queue.drown(toDrown.map(_.uri)))
+      queueDrownTimer.timeFuture(queue.drown(toDrown.map(_.uri))).pipeFailures
 
     case PageToEnqueue(ref) =>
       log.debug(s"Enqueue page request for ${ref.uri}")
@@ -142,23 +143,25 @@ class QueueingActor(
       historyIsKnownTimer
         .timeFuture(history.isKnown(ref.uri))
         .flatMap {
-          case true =>
+          case false =>
             enqueueNewMeter.mark()
             queueEnqueueTimer
               .timeFuture(queue.enqueue(ref))
               .flatMap(_ => historyAddKnownTimer
                 .timeFuture(history.addKnown(ref.uri)))
-          case false =>
+
+          case true =>
             enqueueVisitedMeter.mark()
             Future.successful(false)
         }
+        .pipeFailures
 
     case ProcessedPage(ref) =>
       log.debug(s"Processing completed for ${ref.uri}")
       succeedMeter.mark()
 
       remove(ref.uri)
-      queueSucceedTimer.timeFuture(queue.succeed(ref.uri))
+      queueSucceedTimer.timeFuture(queue.succeed(ref.uri)).pipeFailures
 
     case FailedPage(ref, _, reason, cause) =>
       val causeString = cause.map(c => s"(${c.getMessage}) ").getOrElse("")
@@ -167,7 +170,10 @@ class QueueingActor(
       failedMeter.mark()
 
       remove(ref.uri)
-      queueFailedTimer.timeFuture(queue.failed(ref.uri))
+      queueFailedTimer.timeFuture(queue.failed(ref.uri)).pipeFailures
+
+    case Failure(th) =>
+      log.error(th, "Exception catched")
   }
 }
 

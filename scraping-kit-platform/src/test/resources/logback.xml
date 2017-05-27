@@ -9,7 +9,7 @@
         </filter>
     </appender>
 
-    <logger name="ru.fediq.scrapingkit" level="INFO"/>
+    <logger name="ru.fediq.scrapingkit" level="DEBUG"/>
     <logger name="akka" level="INFO"/>
 
     <root level="INFO">

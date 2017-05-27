@@ -1,6 +1,6 @@
 package ru.fediq.scrapingkit.backend
 
-import java.io.{BufferedInputStream, BufferedOutputStream, FileInputStream, FileOutputStream}
+import java.io._
 
 import akka.http.scaladsl.model.Uri
 import bloomfilter.mutable.BloomFilter
@@ -33,7 +33,11 @@ class BloomFilterLinksHistory(
       .fold {
         BloomFilter[String](expectedItems, falsePositiveRate)
       } { path =>
-        Utilities.tryAndClose(new BufferedInputStream(new FileInputStream(path)))(BloomFilter.readFrom[String]).get
+        if (new File(path).exists()) {
+          Utilities.tryAndClose(new BufferedInputStream(new FileInputStream(path)))(BloomFilter.readFrom[String]).get
+        } else {
+          BloomFilter[String](expectedItems, falsePositiveRate)
+        }
       }
   }
 }

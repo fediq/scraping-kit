@@ -1,6 +1,6 @@
-name := "scraping-kit-plugin-rmq"
+name := "scraping-kit-test"
 
 libraryDependencies ++= Seq(
-  "com.github.sstone" %% "amqp-client" % "1.5",
+  "commons-io" % "commons-io" % "2.5",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
