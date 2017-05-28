@@ -2,7 +2,7 @@ name := "scraping-kit"
 
 lazy val commonSettings = Seq(
   organization := "ru.fediq.scrapingkit",
-  version := "0.3.0",
+  version := "0.3.1-SNAPSHOT",
   scalaVersion := "2.11.8",
   resolvers ++= Seq(
     Resolver.bintrayRepo("hajile", "maven"), // Akka DNS

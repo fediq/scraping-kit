@@ -17,8 +17,8 @@ import spray.json._
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{Await, Future}
 
 class RmqFifoLinksQueue(
   amqpUri: String,
@@ -30,9 +30,10 @@ class RmqFifoLinksQueue(
 ) extends LinksQueue with StrictLogging {
 
   import RmqFifoLinksQueue._
+
   implicit val SerializedPageRefFormat = jsonFormat4(SerializedPageRef)
 
-  val currentRequests: mutable.Map[String, Long] = new ConcurrentHashMap[String, Long]().asScala
+  val currentRequests: mutable.Map[String, (Long, PageRef)] = new ConcurrentHashMap[String, (Long, PageRef)]().asScala
   implicit val timeout = Timeout(amqpTimeout)
 
   val factory = new ConnectionFactory()
@@ -61,7 +62,7 @@ class RmqFifoLinksQueue(
         case Amqp.Ok(_, Some(result: GetResponse)) =>
           val body = new String(result.getBody, StandardCharsets.UTF_8)
           val pageRef = body.parseJson.convertTo[SerializedPageRef].deserialize()
-          currentRequests.put(pageRef.uri.toString(), result.getEnvelope.getDeliveryTag)
+          currentRequests.put(pageRef.uri.toString(), (result.getEnvelope.getDeliveryTag, pageRef))
           Seq(pageRef)
         case Amqp.Error(_, cause) =>
           logger.error("AMQP failure", cause)
@@ -74,12 +75,12 @@ class RmqFifoLinksQueue(
     Future.sequence(gets).map(_.flatten)
   }
 
-  override def failed(uri: Uri) = commitQueue(uri)
+  override def failed(uri: Uri) = commit(uri)
 
-  override def succeed(uri: Uri) = commitQueue(uri)
+  override def succeed(uri: Uri) = commit(uri)
 
   override def drown(uris: Seq[Uri]) = Future.sequence {
-    val sequence: Seq[Future[Any]] = uris.map(uri => commitQueue(uri, requeue = true))
+    val sequence: Seq[Future[Any]] = uris.map(requeue)
     sequence
   }
 
@@ -92,13 +93,29 @@ class RmqFifoLinksQueue(
     channel ? Amqp.Publish("", queueName, body)
   }
 
-  private def commitQueue(uri: Uri, requeue: Boolean = false): Future[Any] = {
-    currentRequests.remove(uri.toString()).map { tag =>
-      channel ? (if (!requeue) Amqp.Ack(tag) else Amqp.Reject(tag, requeue = true))
-    }.getOrElse {
-      logger.warn(s"No running request for $uri")
-      Future.successful()
-    }
+  private def commit(uri: Uri): Future[Any] = {
+    currentRequests
+      .remove(uri.toString())
+      .map { case (tag, _) =>
+        channel ? Amqp.Ack(tag)
+      }
+      .getOrElse {
+        logger.warn(s"No running request for $uri")
+        Future.successful()
+      }
+  }
+
+  private def requeue(uri: Uri): Future[Any] = {
+    currentRequests
+      .remove(uri.toString())
+      .map { case (tag, ref) =>
+        val f = channel ? Amqp.Reject(tag, requeue = false)
+        f.flatMap(_ => enqueue(ref))
+      }
+      .getOrElse {
+        logger.warn(s"No running request for $uri")
+        Future.successful()
+      }
   }
 }
 
@@ -115,4 +132,5 @@ object RmqFifoLinksQueue {
   ) {
     def deserialize(): PageRef = PageRef(Uri(uri), scraper, depth, context)
   }
+
 }
