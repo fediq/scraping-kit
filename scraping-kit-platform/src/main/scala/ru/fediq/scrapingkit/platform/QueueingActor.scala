@@ -1,6 +1,5 @@
 package ru.fediq.scrapingkit.platform
 
-import akka.actor.Status.Failure
 import akka.http.scaladsl.model._
 import akka.pattern.pipe
 import ru.fediq.scrapingkit._
@@ -172,8 +171,8 @@ class QueueingActor(
       remove(ref.uri)
       queueFailedTimer.timeFuture(queue.failed(ref.uri)).pipeFailures
 
-    case Failure(th) =>
-      log.error(th, "Exception catched")
+    case PipedFailure(th) =>
+      log.error(th, "Piped failure")
   }
 }
 

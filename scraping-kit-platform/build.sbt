@@ -5,6 +5,7 @@ val akkaHttpVersion = "10.0.6"
 
 libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.2.1",
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.5.0",
   "com.iheart" %% "ficus" % "1.4.0",
   "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
   "ru.smslv.akka" %% "akka-dns" % "2.4.2",

@@ -10,11 +10,13 @@ import akka.util.Timeout
 import com.github.sstone.amqp.Amqp.QueueParameters
 import com.github.sstone.amqp.{Amqp, ChannelOwner, ConnectionOwner}
 import com.rabbitmq.client.{ConnectionFactory, GetResponse}
+import com.typesafe.scalalogging.StrictLogging
 import ru.fediq.scrapingkit.model.PageRef
 import spray.json.DefaultJsonProtocol._
 import spray.json._
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.FiniteDuration
 
@@ -25,12 +27,12 @@ class RmqFifoLinksQueue(
   amqpTimeout: FiniteDuration
 )(
   implicit system: ActorSystem
-) extends LinksQueue {
+) extends LinksQueue with StrictLogging {
 
   import RmqFifoLinksQueue._
   implicit val SerializedPageRefFormat = jsonFormat4(SerializedPageRef)
 
-  val currentRequests = new ConcurrentHashMap[Uri, Long]().asScala
+  val currentRequests: mutable.Map[String, Long] = new ConcurrentHashMap[String, Long]().asScala
   implicit val timeout = Timeout(amqpTimeout)
 
   val factory = new ConnectionFactory()
@@ -47,6 +49,8 @@ class RmqFifoLinksQueue(
     autodelete = false
   )), amqpTimeout)
 
+  logger.info(s"Connected to AMQP $amqpUri using queue $queueName")
+
   override implicit val dispatcher = system.dispatcher
 
   override def pull(count: Int) = {
@@ -57,10 +61,13 @@ class RmqFifoLinksQueue(
         case Amqp.Ok(_, Some(result: GetResponse)) =>
           val body = new String(result.getBody, StandardCharsets.UTF_8)
           val pageRef = body.parseJson.convertTo[SerializedPageRef].deserialize()
-          currentRequests.put(pageRef.uri, result.getEnvelope.getDeliveryTag)
+          currentRequests.put(pageRef.uri.toString(), result.getEnvelope.getDeliveryTag)
           Seq(pageRef)
         case Amqp.Error(_, cause) =>
-          system.log.error(cause, "AMQP failure")
+          logger.error("AMQP failure", cause)
+          Nil
+        case ChannelOwner.NotConnectedError(_) =>
+          logger.error("AMPQ channel not connected")
           Nil
       }
     }
@@ -86,10 +93,10 @@ class RmqFifoLinksQueue(
   }
 
   private def commitQueue(uri: Uri, requeue: Boolean = false): Future[Any] = {
-    currentRequests.remove(uri).map { tag =>
+    currentRequests.remove(uri.toString()).map { tag =>
       channel ? (if (!requeue) Amqp.Ack(tag) else Amqp.Reject(tag, requeue = true))
     }.getOrElse {
-      system.log.warning(s"No running request for $uri")
+      logger.warn(s"No running request for $uri")
       Future.successful()
     }
   }
@@ -104,7 +111,7 @@ object RmqFifoLinksQueue {
     uri: String,
     scraper: String,
     depth: Int,
-    context: Option[Map[String, String]]
+    context: Map[String, String]
   ) {
     def deserialize(): PageRef = PageRef(Uri(uri), scraper, depth, context)
   }

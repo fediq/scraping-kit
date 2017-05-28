@@ -15,8 +15,10 @@ trait ScrapingKitActor extends Actor with ActorLogging {
   implicit class FutureWrapper[T](val future: Future[T]) {
     def pipeFailures(implicit ec: ExecutionContext): Future[T] = {
       future andThen {
-        case Failure(f) ⇒ self ! Status.Failure(f)
+        case Failure(f) ⇒ self ! PipedFailure(f)
       }
     }
   }
 }
+
+case class PipedFailure(th: Throwable)

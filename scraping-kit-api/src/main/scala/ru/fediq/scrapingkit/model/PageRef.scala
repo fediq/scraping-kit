@@ -6,7 +6,7 @@ case class PageRef(
   uri: Uri,
   scraperName: String,
   depth: Int = 1,
-  context: Option[Map[String, String]] = None,
+  context: Map[String, String] = Map.empty,
   redirectsChain: List[Uri] = Nil
 ) {
   def lastUri = redirectsChain.headOption.getOrElse(uri)

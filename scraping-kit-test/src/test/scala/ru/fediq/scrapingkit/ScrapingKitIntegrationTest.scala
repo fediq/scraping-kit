@@ -60,6 +60,6 @@ class ScrapingKitIntegrationTest extends FlatSpec with BeforeAndAfter {
 
     Thread.sleep(120000)
 
-    reactor.close()
+    system.terminate()
   }
 }

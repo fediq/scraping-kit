@@ -73,4 +73,8 @@ object Utilities {
       }
       .mapValues(_.asInstanceOf[JsValue])
   }
+
+  implicit class StringToAnyMapWrapper(val map: Map[String, Any]) extends AnyVal {
+    def mapToJson: Map[String, JsValue] = Utilities.mapToJson(map)
+  }
 }

@@ -2,6 +2,7 @@ package ru.fediq.scrapingkit
 
 import akka.actor.{ActorSystem, Props}
 import akka.routing.RoundRobinPool
+import com.typesafe.scalalogging.StrictLogging
 import net.ceedubs.ficus.Ficus._
 import net.ceedubs.ficus.readers.ArbitraryTypeReader._
 import ru.fediq.scrapingkit.backend.{FeedExporter, LinksHistory, LinksQueue, PageCache}
@@ -17,9 +18,9 @@ class ScrapingKitReactor(
   exporter: FeedExporter,
   scrapers: Map[String, Scraper]
 )(implicit val system: ActorSystem)
-  extends AnyRef with AutoCloseable {
+  extends AnyRef with AutoCloseable with StrictLogging {
 
-  val config = system.settings.config.as[ScrapingKitConfig]("scrap")
+  val config = system.settings.config.as[ScrapingKitConfig]("scrapingkit")
 
   val queueingActor = system
     .actorOf(
@@ -41,8 +42,12 @@ class ScrapingKitReactor(
       "scraping"
     )
 
+  system.registerOnTermination(close())
+
   override def close() = {
+    logger.info("Stopping ScarpingKit Reactor")
     Try(linksQueue.close())
+    Try(linksHistory.close())
     Try(pageCache.close())
     Try(exporter.close())
   }

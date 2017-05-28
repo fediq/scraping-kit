@@ -6,24 +6,27 @@ import akka.http.scaladsl.model._
 import org.jsoup.Jsoup
 import org.jsoup.nodes.{Document, Element}
 
-import scala.collection.JavaConverters._
+import scala.collection.convert.WrapAsScala
 import scala.language.implicitConversions
 import scala.util.Try
 
 trait Scraper {
-  def scrape(uri: Uri, status: StatusCode, body: HttpEntity.Strict, context: Option[Map[String, String]]): Seq[Scraped]
+  def scrape(uri: Uri, status: StatusCode, body: HttpEntity.Strict, context: Map[String, String]): Seq[Scraped]
 }
 
-trait HtmlScraper extends Scraper {
-  def scrape(document: Document, context: Option[Map[String, String]]): Seq[Scraped]
+trait HtmlScraper extends Scraper with JsoupScrapingHelper {
+  def scrape(document: Document, context: Map[String, String]): Seq[Scraped]
 
-  override def scrape(uri: Uri, status: StatusCode, body: HttpEntity.Strict, context: Option[Map[String, String]]) = {
+  def postProcess(scraped: Seq[Scraped], uri: Uri, statusCode: StatusCode, context: Map[String, String]): Seq[Scraped] = scraped
+
+  override def scrape(uri: Uri, status: StatusCode, body: HttpEntity.Strict, context: Map[String, String]) = {
     (status, body.contentType.mediaType) match {
       case (s: StatusCodes.Success, MediaTypes.`text/html`) =>
         val charset = body.contentType.charsetOption.map(_.nioCharset).getOrElse(StandardCharsets.UTF_8)
         val bodyString = body.data.decodeString(charset)
         val document = Jsoup.parse(bodyString, uri.toString())
-        scrape(document, context)
+        val scraped = scrape(document, context)
+        postProcess(scraped, uri, status, context)
 
       case (s: StatusCodes.Success, mediaType) =>
         throw new UnsupportedMediaTypeException(mediaType)
@@ -34,17 +37,16 @@ trait HtmlScraper extends Scraper {
   }
 }
 
-class HtmlCrawlingScraper(name: String) extends HtmlScraper with JsoupScrapingHelper {
-  override def scrape(document: Document, context: Option[Map[String, String]]) = {
+class HtmlCrawlingScraper(name: String) extends HtmlScraper {
+  override def scrape(document: Document, context: Map[String, String]) = {
     document
       .select("a")
-      .asScala
       .flatMap(_.maybeHref)
       .map(uri => DownloadRequest(uri, name))
   }
 }
 
-trait JsoupScrapingHelper {
+trait JsoupScrapingHelper extends WrapAsScala {
 
   implicit class ElementWrapper(val e: Element) {
     def maybeHref: Option[Uri] = {
