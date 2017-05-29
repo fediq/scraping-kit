@@ -23,13 +23,23 @@ trait LinksQueue extends AutoCloseable {
     futures
   }
 
+  def enqueueAll(refs: Seq[PageRef]): Future[Any] = Future.sequence {
+    val futures = refs.map(enqueue)
+    futures
+  }
+
+  def drownAll(uris: Seq[Uri]): Future[Any] =  Future.sequence {
+    val futures = uris.map(drown)
+    futures
+  }
+
   def failed(uri: Uri): Future[Any]
 
   def succeed(uri: Uri): Future[Any]
 
-  def drown(uris: Seq[Uri]): Future[Any]
-
   def enqueue(ref: PageRef): Future[Any]
+
+  def drown(uri: Uri): Future[Any]
 
   override def close() = {
     // Do nothing
@@ -43,7 +53,7 @@ class InMemoryLinksQueue(
   private val queue = mutable.PriorityQueue[(Long, PageRef)]()(Ordering.by(_._1))
   private val pulled = mutable.Map[Uri, PageRef]()
 
-  implicit val dispatcher = Utilities.singleDaemonThreadDispatcher("links-queue")
+  implicit val dispatcher = Utilities.singleDaemonDispatcher("links-queue")
 
   private val pulledSizeGauge = metrics.gauge("pulledSize")(pulled.size)
   private val queueSizeGauge = metrics.gauge("queueSize")(queue.size)
@@ -66,9 +76,8 @@ class InMemoryLinksQueue(
     pulled.remove(url)
   }
 
-  override def drown(urls: Seq[Uri]) = Future {
-    val drowned = urls.flatMap(url => pulled.remove(url).toSeq)
-    drowned.foreach(enqueue)
+  override def drown(uri: Uri) = {
+    pulled.remove(uri).map(enqueue).getOrElse(Future.successful())
   }
 
   override def enqueue(ref: PageRef) = Future {

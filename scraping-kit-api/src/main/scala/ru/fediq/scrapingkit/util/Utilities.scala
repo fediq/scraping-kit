@@ -12,7 +12,7 @@ import scala.util.{Failure, Success, Try}
 object Utilities {
   private val logger = LoggerFactory.getLogger("UNCAUGHT")
 
-  def singleDaemonThreadDispatcher(name: String): ExecutionContextExecutor = {
+  def singleDaemonDispatcher(name: String): ExecutionContextExecutor = {
     ExecutionContext.fromExecutor(
       Executors.newSingleThreadExecutor(
         MonitorableThreadFactory(
@@ -23,7 +23,7 @@ object Utilities {
         )))
   }
 
-  def singleActiveThreadDispatcher(name: String): ExecutionContextExecutor = {
+  def singleActiveDispatcher(name: String): ExecutionContextExecutor = {
     ExecutionContext.fromExecutor(
       Executors.newSingleThreadExecutor(
         MonitorableThreadFactory(
@@ -32,6 +32,34 @@ object Utilities {
           contextClassLoader = None,
           exceptionHandler = loggingExceptionHandler
         )))
+  }
+
+  def poolDaemonDispatcher(size: Int, name: String): ExecutionContextExecutor = {
+    ExecutionContext.fromExecutor(
+      Executors.newFixedThreadPool(
+        size,
+        MonitorableThreadFactory(
+          name = name,
+          daemonic = true,
+          contextClassLoader = None,
+          exceptionHandler = loggingExceptionHandler
+        )
+      )
+    )
+  }
+
+  def poolActiveDispatcher(size: Int, name: String): ExecutionContextExecutor = {
+    ExecutionContext.fromExecutor(
+      Executors.newFixedThreadPool(
+        size,
+        MonitorableThreadFactory(
+          name = name,
+          daemonic = false,
+          contextClassLoader = None,
+          exceptionHandler = loggingExceptionHandler
+        )
+      )
+    )
   }
 
   def loggingExceptionHandler = new Thread.UncaughtExceptionHandler {
@@ -72,9 +100,5 @@ object Utilities {
         case l: java.lang.Long => JsNumber(l)
       }
       .mapValues(_.asInstanceOf[JsValue])
-  }
-
-  implicit class StringToAnyMapWrapper(val map: Map[String, Any]) extends AnyVal {
-    def mapToJson: Map[String, JsValue] = Utilities.mapToJson(map)
   }
 }

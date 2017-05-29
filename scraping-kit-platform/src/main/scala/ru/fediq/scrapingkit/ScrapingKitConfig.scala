@@ -6,6 +6,7 @@ case class ScrapingKitConfig(
   maxConcurrentRequests: Int,
   maxConcurrentRequestsPerDomain: Int,
   pullingInterval: FiniteDuration,
+  logErrorsEach: Int,
   processingTimeout: FiniteDuration,
   maxCrawlingDepth: Int,
   maxCrawlingRedirects: Int,

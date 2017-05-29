@@ -42,7 +42,7 @@ class ScrapingKitIntegrationTest extends FlatSpec with BeforeAndAfter {
 
     val linksQueue = new RmqFifoLinksQueue("amqp://localhost", "scrapingKit", 1 seconds, 10 seconds)
     val linksHistory = new BloomFilterLinksHistory(10000000, 0.01f, Some(tempPath + "/history.bin"))
-    val pageCache = new FileSystemPageCache(tempPath + "/cache/")
+    val pageCache = new FileSystemPageCache(tempPath + "/cache/", 4)
     val exporter = new JsonLinesFeedExporter(tempPath + "/output,jsonl")
 
     val reactor = new ScrapingKitReactor(linksQueue, linksHistory, pageCache, exporter, scrapers)
@@ -58,7 +58,7 @@ class ScrapingKitIntegrationTest extends FlatSpec with BeforeAndAfter {
       .build()
       .start(10, TimeUnit.SECONDS)
 
-    Thread.sleep(120000)
+    Thread.sleep(60000)
 
     system.terminate()
   }

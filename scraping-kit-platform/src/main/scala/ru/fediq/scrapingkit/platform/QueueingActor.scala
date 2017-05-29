@@ -45,7 +45,9 @@ class QueueingActor(
   private val historyIsKnownTimer = metrics.timer("isKnownTime")
   private val historyAddKnownTimer = metrics.timer("addKnownTime")
 
-  val runningRequests = mutable.Map[String, mutable.Map[Uri, Deadline]]()
+  private val runningRequests = mutable.Map[String, mutable.Map[Uri, Deadline]]()
+
+  private var errorsCount: Int = 0
 
   override def preStart() = {
     context.system.scheduler.schedule(0 seconds, config.pullingInterval, self, TimeToPull)
@@ -133,7 +135,7 @@ class QueueingActor(
       toRun.foreach(req => downloadingActor ! req)
 
       drownMeter.mark(toDrown.size)
-      queueDrownTimer.timeFuture(queue.drown(toDrown.map(_.uri))).pipeFailures
+      queueDrownTimer.timeFuture(queue.drownAll(toDrown.map(_.uri))).pipeFailures
 
     case PageToEnqueue(ref) =>
       log.debug(s"Enqueue page request for ${ref.uri}")
@@ -163,10 +165,16 @@ class QueueingActor(
       queueSucceedTimer.timeFuture(queue.succeed(ref.uri)).pipeFailures
 
     case FailedPage(ref, _, reason, cause) =>
-      val causeString = cause.map(c => s"(${c.getMessage}) ").getOrElse("")
-      val reasonString = reason.map(r => s"($r) ").getOrElse("")
-      log.info(s"Processing failed $reasonString${causeString}for ${ref.uri}")
+      val causeString = cause.map(c => s" (${c.getMessage})").getOrElse("")
+      val reasonString = reason.map(r => s" ($r)").getOrElse("")
+
+      log.debug(s"Processing failed for ${ref.uri}$reasonString$causeString")
       failedMeter.mark()
+
+      errorsCount += 1
+      if (config.logErrorsEach > 0 && errorsCount % config.logErrorsEach == 0) {
+        log.info(s"Already failed $errorsCount pages, last for ${ref.uri}$reasonString$causeString")
+      }
 
       remove(ref.uri)
       queueFailedTimer.timeFuture(queue.failed(ref.uri)).pipeFailures

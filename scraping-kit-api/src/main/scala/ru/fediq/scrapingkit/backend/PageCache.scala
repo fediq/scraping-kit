@@ -2,7 +2,7 @@ package ru.fediq.scrapingkit.backend
 
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, StandardOpenOption}
 
 import akka.http.scaladsl.model.{ContentType, HttpEntity, StatusCode, Uri}
 import akka.util.ByteString
@@ -29,10 +29,15 @@ case class CachedRedirect(
   time: DateTime
 ) extends CachedEntity
 
+case class CachedFailure(
+  failure: String,
+  time: DateTime
+) extends CachedEntity
+
 trait PageCache extends AutoCloseable {
   implicit def dispatcher: ExecutionContextExecutor = ExecutionContext.global
 
-  def store(ref: PageRef, time: DateTime, status: StatusCode, body: HttpEntity.Strict): Future[Any] = {
+  def storeFetch(ref: PageRef, time: DateTime, status: StatusCode, body: HttpEntity.Strict): Future[Any] = {
     val lastUri = ref.lastUri
     val redirectsFutures = ref.redirectSteps.map { uri =>
       store(uri, CachedRedirect(lastUri, time))
@@ -44,7 +49,20 @@ trait PageCache extends AutoCloseable {
     }
   }
 
-  def store(uri: Uri, entry: CachedEntity): Future[Any]
+  def storeFailure(ref: PageRef, failure: String): Future[Any] = {
+    val time: DateTime = DateTime.now()
+    val lastUri = ref.lastUri
+    val redirectsFutures = ref.redirectSteps.map { uri =>
+      store(uri, CachedRedirect(lastUri, time))
+    }
+    val failureFuture = store(lastUri, CachedFailure(failure, time))
+    Future.sequence {
+      val futures: Seq[Future[Any]] = redirectsFutures :+ failureFuture
+      futures
+    }
+  }
+
+  protected def store(uri: Uri, entry: CachedEntity): Future[Any]
 
   def load(uri: Uri): Future[Option[CachedEntity]]
 
@@ -63,21 +81,21 @@ class NoOpPageCache extends PageCache {
   }
 }
 
-class FileSystemPageCache(rootPath: String) extends PageCache with DefaultJsonProtocol {
+class FileSystemPageCache(rootPath: String, parallelism: Int = 1) extends PageCache with DefaultJsonProtocol {
 
   import FileSystemPageCache._
 
-  implicit val dumpedCachedEntityFormat = jsonFormat6(DumpedCachedEntry)
+  implicit val dumpedCachedEntityFormat = jsonFormat7(DumpedCachedEntry)
 
   Files.createDirectories(new File(rootPath).toPath)
 
-  override implicit val dispatcher = Utilities.singleDaemonThreadDispatcher("page-cache")
+  override implicit val dispatcher = Utilities.poolDaemonDispatcher(parallelism, "page-cache")
 
-  override def store(uri: Uri, entity: CachedEntity): Future[Path] = Future {
+  override protected def store(uri: Uri, entity: CachedEntity): Future[_] = Future {
     val url = uri.toString()
     val blob = serialize(url, entity)
     val path = preparePathToStore(url)
-    Files.write(path, blob)
+    Try(Files.write(path, blob, StandardOpenOption.CREATE_NEW))
   }
 
   override def load(uri: Uri): Future[Option[CachedEntity]] = Future {
@@ -121,6 +139,11 @@ class FileSystemPageCache(rootPath: String) extends PageCache with DefaultJsonPr
         contentType = Some(body.contentType.value),
         body = Some(Base64.encodeBase64String(body.data.toArray))
       )
+      case CachedFailure(failure, time) => DumpedCachedEntry(
+        url = url,
+        time = time.getMillis,
+        failure = Some(failure)
+      )
     }
     dumped.toJson.compactPrint.getBytes(StandardCharsets.UTF_8)
   }
@@ -131,7 +154,7 @@ class FileSystemPageCache(rootPath: String) extends PageCache with DefaultJsonPr
       .convertTo[DumpedCachedEntry]
 
     dumped match {
-      case DumpedCachedEntry(_, time, Some(status), Some(contentType), Some(body), None) =>
+      case DumpedCachedEntry(_, time, Some(status), Some(contentType), Some(body), None, None) =>
         CachedPage(
           status,
           new DateTime(time),
@@ -140,10 +163,13 @@ class FileSystemPageCache(rootPath: String) extends PageCache with DefaultJsonPr
             ByteString(Base64.decodeBase64(body))
           ))
 
-      case DumpedCachedEntry(_, time, None, None, None, Some(redirect)) =>
+      case DumpedCachedEntry(_, time, None, None, None, Some(redirect), None) =>
         CachedRedirect(Uri(redirect), new DateTime(time))
 
-      case _ => throw new IllegalArgumentException()
+      case DumpedCachedEntry(_, time, None, None, None, None, Some(failure)) =>
+        CachedFailure(failure, new DateTime(time))
+
+      case entry => throw new IllegalArgumentException(s"Unexpected cached entry: $entry")
     }
   }
 }
@@ -156,7 +182,8 @@ object FileSystemPageCache {
     status: Option[Int] = None,
     contentType: Option[String] = None,
     body: Option[String] = None,
-    redirect: Option[String] = None
+    redirect: Option[String] = None,
+    failure: Option[String] = None
   )
 
 

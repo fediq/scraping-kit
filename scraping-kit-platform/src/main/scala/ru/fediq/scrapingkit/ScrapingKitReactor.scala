@@ -50,5 +50,6 @@ class ScrapingKitReactor(
     Try(linksHistory.close())
     Try(pageCache.close())
     Try(exporter.close())
+    logger.info("Stopped")
   }
 }

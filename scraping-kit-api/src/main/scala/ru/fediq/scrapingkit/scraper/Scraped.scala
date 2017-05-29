@@ -1,7 +1,7 @@
 package ru.fediq.scrapingkit.scraper
 
 import akka.http.scaladsl.model.Uri
-import ru.fediq.scrapingkit.util.Utilities._
+import ru.fediq.scrapingkit.util.Implicits._
 import spray.json._
 
 sealed trait Scraped

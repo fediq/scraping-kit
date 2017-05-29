@@ -24,9 +24,9 @@ class NoOpFeedExporter extends FeedExporter {
 class JsonLinesFeedExporter(
   path: String
 ) extends FeedExporter {
-  val writer = new PrintWriter(new BufferedOutputStream(new FileOutputStream(path)))
+  val writer = new PrintWriter(new BufferedOutputStream(new FileOutputStream(path, true)))
 
-  implicit val dispatcher = Utilities.singleDaemonThreadDispatcher("feed-exporter")
+  implicit val dispatcher = Utilities.singleDaemonDispatcher("feed-exporter")
 
   override def store[T <: ScrapedEntity](entity: T) = Future {
     writer.println(entity.dump)

@@ -30,6 +30,7 @@ class DownloadingActor(
   private val cacheHitsMeter = metrics.meter("cacheHitsRate")
   private val cacheMissesMeter = metrics.meter("cacheMissesRate")
   private val cacheRedirectsMeter = metrics.meter("cacheRedirectsRate")
+  private val cacheFailuresMeter = metrics.meter("cacheFailuresRate")
   private val downloadedRedirectsMeter = metrics.meter("downloadedRedirectsRate")
   private val downloadedPagesMeter = metrics.meter("downloadedPagesRate")
 
@@ -50,9 +51,9 @@ class DownloadingActor(
       downloadsMeter.mark()
 
       if (ref.depth > config.maxCrawlingDepth) {
-        queueingActor ! ref.fail(s"Too deep")
+        handleFailure(ref, "Too deep")
       } else if (ref.redirectsChain.size > config.maxCrawlingRedirects) {
-        queueingActor ! ref.fail(s"Too many redirects: ${ref.redirectsChain}")
+        handleFailure(ref, s"Too many redirects: ${ref.redirectsChain}")
       } else {
         cacheLoadTimer.timeFuture(
           cache
@@ -69,10 +70,17 @@ class DownloadingActor(
       scrapingActor ! DownloadedPage(ref, time, status, body)
 
     case CacheCheckResult(ref, Some(CachedRedirect(location, _))) =>
-      log.debug(s"Cached redirect for ${ref.lastUri}")
+      val normalizedLocation = location.resolvedAgainst(ref.lastUri)
+      log.debug(s"Cached redirect for ${ref.lastUri} to $normalizedLocation")
       cacheRedirectsMeter.mark()
 
-      self ! ref.chain(location)
+      self ! ref.chain(normalizedLocation)
+
+    case CacheCheckResult(ref, Some(CachedFailure(failure, _))) =>
+      log.debug(s"Cached failure for ${ref.lastUri}")
+      cacheFailuresMeter.mark()
+
+      queueingActor ! ref.fail(failure)
 
     case CacheCheckResult(ref, None) =>
       log.debug(s"Cache miss for ${ref.lastUri}")
@@ -95,13 +103,14 @@ class DownloadingActor(
         case _: StatusCodes.Redirection =>
           response.header[Location] match {
             case Some(location) =>
-              log.debug(s"Redirect from ${ref.lastUri} to ${location.uri}")
+              val normalizedLocation = location.uri.resolvedAgainst(ref.lastUri)
+              log.debug(s"Redirect from ${ref.lastUri} to $normalizedLocation")
               downloadedRedirectsMeter.mark()
 
-              self ! ref.chain(location.uri)
+              self ! ref.chain(normalizedLocation)
 
             case None =>
-              queueingActor ! ref.fail("No location in redirect")
+              handleFailure(ref, "No location in redirect")
           }
           response.discardEntityBytes()
 
@@ -118,19 +127,37 @@ class DownloadingActor(
 
                 val page = ref.body(body, response.status)
                 scrapingActor ! page
-                cacheStoreTimer.timeFuture(cache.store(page.ref, page.time, page.status, page.body))
+                cacheFetch(ref, page)
 
               case Failure(th) =>
                 log.debug(s"Failed to fetch page ${ref.lastUri} (${th.getMessage})")
+                httpErrorsMeter.mark()
                 // TODO retry?
-                queueingActor ! ref.fail(th)
+                handleFailure(ref, th)
             }
       }
 
     case PageRefAndFailure(ref, th) =>
       log.debug(s"Failed to download page ${ref.lastUri} (${th.getMessage})")
       httpErrorsMeter.mark()
-      queueingActor ! ref.fail(th)
+      // TODO retry?
+      handleFailure(ref, th)
+
+    case PipedFailure(th) =>
+      log.error(th, "Piped failure")
+  }
+
+  private def cacheFetch(ref: PageRef, page: DownloadedPage) = {
+    cacheStoreTimer.timeFuture(cache.storeFetch(ref, page.time, page.status, page.body)).pipeFailures
+  }
+
+  private def handleFailure(ref: PageRef, th: Throwable) = {
+    queueingActor ! ref.fail(th)
+    cacheStoreTimer.timeFuture(cache.storeFailure(ref, th.getMessage)).pipeFailures
+  }
+
+  private def handleFailure(ref: PageRef, reason: String) = {
+    cacheStoreTimer.timeFuture(cache.storeFailure(ref, reason)).pipeFailures
   }
 }
 
