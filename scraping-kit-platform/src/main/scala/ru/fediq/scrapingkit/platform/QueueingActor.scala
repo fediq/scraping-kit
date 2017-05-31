@@ -27,6 +27,8 @@ class QueueingActor(
 
   private val outdatedMeter = metrics.meter("outdatedRate")
   private val pulledMeter = metrics.meter("pulledRate")
+  private val pullerIsBusyMeter = metrics.meter("pullerIsBusyRate")
+  private val pullTimeoutMeter = metrics.meter("pullTimeoutRate")
   private val succeedMeter = metrics.meter("succeedRate")
   private val failedMeter = metrics.meter("failedRate")
   private val drownMeter = metrics.meter("drownRate")
@@ -46,6 +48,8 @@ class QueueingActor(
   private val historyAddKnownTimer = metrics.timer("addKnownTime")
 
   private val runningRequests = mutable.Map[String, mutable.Map[Uri, Deadline]]()
+
+  private var pullInProgress: Boolean = false
 
   private var errorsCount: Int = 0
 
@@ -106,27 +110,37 @@ class QueueingActor(
 
   override def receive = {
     case TimeToPull =>
-      log.debug("Time to pull!")
-      val outdated = clearOutdated()
-      if (outdated.nonEmpty) {
-        log.warning(s"${outdated.size} downloads timed out")
-        outdated.foreach(uri => log.debug(s"Download timed out: $uri"))
-        queueFailedAllTimer.timeFuture(queue.failedAll(outdated)).pipeFailures
-        outdatedMeter.mark(outdated.size)
-      }
+      if (pullInProgress) {
+        log.warning("Time to pull, but puller is busy")
+        pullerIsBusyMeter.mark()
+      } else {
+        log.debug("Time to pull!")
+        val outdated = clearOutdated()
+        if (outdated.nonEmpty) {
+          log.warning(s"${outdated.size} downloads timed out")
+          outdated.foreach(uri => log.debug(s"Download timed out: $uri"))
+          queueFailedAllTimer.timeFuture(queue.failedAll(outdated)).pipeFailures
+          outdatedMeter.mark(outdated.size)
+        }
 
-      val free = freeSlots
-      if (free > 0) {
-        val toPull = (free * (100.0 / (100.0 - drownShareHist.mean))).toInt
-        log.debug(s"Want $free items, pulling $toPull")
-        queuePullTimer
-          .timeFuture(queue.pull(toPull))
-          .map(refs => PulledBatch(refs, free))
-          .pipeTo(self)
+        val free = freeSlots
+        if (free > 0) {
+          val toPull = (free * (100.0 / (100.0 - drownShareHist.mean))).toInt
+          log.info(s"Want $free items, pulling $toPull")
+          pullInProgress = true
+          queuePullTimer
+            .timeFuture(queue.pull(toPull))
+            .map(refs => PulledBatch(refs, free))
+            .pipeTo(self)
+          context.system.scheduler.scheduleOnce(config.pullingTimeout, self, PullTimedOut)
+        } else {
+          log.debug("No free slots")
+        }
       }
 
     case PulledBatch(refs, free) =>
       pulledMeter.mark(refs.size)
+      pullInProgress = false
       val (toRun, toDrown) = refs.partition(tryAdd)
       log.info(s"Pulled ${refs.size} items, wanted $free, downloading ${toRun.size}, drowning ${toDrown.size}")
       drownShareHist += (if (refs.nonEmpty) 100 * toDrown.size / refs.size else 0)
@@ -136,6 +150,11 @@ class QueueingActor(
 
       drownMeter.mark(toDrown.size)
       queueDrownTimer.timeFuture(queue.drownAll(toDrown.map(_.uri))).pipeFailures
+
+    case PullTimedOut =>
+      log.warning("Pull timed out")
+      pullInProgress = false
+      pullTimeoutMeter.mark()
 
     case PageToEnqueue(ref) =>
       log.debug(s"Enqueue page request for ${ref.uri}")
@@ -188,6 +207,8 @@ object QueueingActor extends Metrics {
   type Deadline = Long
 
   case object TimeToPull
+
+  case object PullTimedOut
 
   case class PulledBatch(refs: Seq[PageRef], free: Int)
 

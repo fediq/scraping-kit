@@ -1,3 +1,6 @@
+### 0.4.2 (2017.05.21)
+* Throttling pulls in QueueingActor
+
 ### 0.4.1 (2017.05.30)
 * RMQ queue bucketing added
 * Shuffling removed from RMQ FIFO queue

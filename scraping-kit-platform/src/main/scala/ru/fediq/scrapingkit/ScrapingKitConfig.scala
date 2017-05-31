@@ -5,6 +5,7 @@ import scala.concurrent.duration.FiniteDuration
 case class ScrapingKitConfig(
   maxConcurrentRequests: Int,
   maxConcurrentRequestsPerDomain: Int,
+  pullingTimeout: FiniteDuration,
   pullingInterval: FiniteDuration,
   logErrorsEach: Int,
   processingTimeout: FiniteDuration,
