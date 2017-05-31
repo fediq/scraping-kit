@@ -24,6 +24,7 @@ class QueueingActor(
   private val freeSlotsGauge = metrics.gauge("freeSlots")(freeSlots)
   private val busySlotsGauge = metrics.gauge("busySlots")(busySlots)
   private val domainSlotsGauge = metrics.gauge("domainSlots")(domainSlots)
+  private val runningPullsGauge = metrics.gauge("runningPulls")(pullSlots)
 
   private val outdatedMeter = metrics.meter("outdatedRate")
   private val pulledMeter = metrics.meter("pulledRate")
@@ -49,7 +50,8 @@ class QueueingActor(
 
   private val runningRequests = mutable.Map[String, mutable.Map[Uri, Deadline]]()
 
-  private var pullInProgress: Boolean = false
+  private val runningPulls = mutable.Set[Int]()
+  private var nextPullId: Int = 0
 
   private var errorsCount: Int = 0
 
@@ -62,6 +64,8 @@ class QueueingActor(
   def freeSlots: Int = config.maxConcurrentRequests - busySlots
 
   def domainSlots: Int = runningRequests.size
+
+  def pullSlots = runningPulls.size
 
   def tryAdd(ref: PageRef): Boolean = {
     val domain = ref.uri.authority.host.address()
@@ -110,7 +114,7 @@ class QueueingActor(
 
   override def receive = {
     case TimeToPull =>
-      if (pullInProgress) {
+      if (runningPulls.size >= config.maxPullsInParallel) {
         log.warning("Time to pull, but puller is busy")
         pullerIsBusyMeter.mark()
       } else {
@@ -126,23 +130,25 @@ class QueueingActor(
         val free = freeSlots
         if (free > 0) {
           val toPull = (free * (100.0 / (100.0 - drownShareHist.mean))).toInt
-          log.info(s"Want $free items, pulling $toPull")
-          pullInProgress = true
+          nextPullId += 1
+          val pullId = nextPullId
+          runningPulls.add(pullId)
+          log.info(s"Want $free items, pulling $toPull (#$pullId)")
           queuePullTimer
             .timeFuture(queue.pull(toPull))
-            .map(refs => PulledBatch(refs, free))
+            .map(refs => PulledBatch(refs, free, pullId))
             .pipeTo(self)
-          context.system.scheduler.scheduleOnce(config.pullingTimeout, self, PullTimedOut)
+          context.system.scheduler.scheduleOnce(config.pullingTimeout, self, PullTimedOut(pullId))
         } else {
           log.debug("No free slots")
         }
       }
 
-    case PulledBatch(refs, free) =>
+    case PulledBatch(refs, free, id) =>
       pulledMeter.mark(refs.size)
-      pullInProgress = false
+      runningPulls.remove(id)
       val (toRun, toDrown) = refs.partition(tryAdd)
-      log.info(s"Pulled ${refs.size} items, wanted $free, downloading ${toRun.size}, drowning ${toDrown.size}")
+      log.info(s"Pulled ${refs.size} items, wanted $free, downloading ${toRun.size}, drowning ${toDrown.size} (#$id)")
       drownShareHist += (if (refs.nonEmpty) 100 * toDrown.size / refs.size else 0)
 
       runningMeter.mark(toRun.size)
@@ -151,10 +157,12 @@ class QueueingActor(
       drownMeter.mark(toDrown.size)
       queueDrownTimer.timeFuture(queue.drownAll(toDrown.map(_.uri))).pipeFailures
 
-    case PullTimedOut =>
-      log.warning("Pull timed out")
-      pullInProgress = false
-      pullTimeoutMeter.mark()
+    case PullTimedOut(id) =>
+      if (runningPulls.contains(id)) {
+        log.warning(s"Pull timed out (#$id)")
+        runningPulls.remove(id)
+        pullTimeoutMeter.mark()
+      }
 
     case PageToEnqueue(ref) =>
       log.debug(s"Enqueue page request for ${ref.uri}")
@@ -208,8 +216,8 @@ object QueueingActor extends Metrics {
 
   case object TimeToPull
 
-  case object PullTimedOut
+  case class PullTimedOut(id: Int)
 
-  case class PulledBatch(refs: Seq[PageRef], free: Int)
+  case class PulledBatch(refs: Seq[PageRef], free: Int, id: Int)
 
 }
