@@ -13,7 +13,7 @@ trait ScrapedEntity extends Scraped {
 }
 
 case class MapScrapedEntity(map: Map[String, Any]) extends ScrapedEntity with DefaultJsonProtocol {
-  override def dump = map.mapToJson.toJson.compactPrint
+  override def dump = map.mapToJson.compactPrint
 }
 
 abstract class JsonScrapedEntity[T](format: JsonFormat[T]) extends ScrapedEntity {

@@ -1,12 +1,12 @@
 package ru.fediq.scrapingkit.util
 
-import spray.json.JsValue
+import spray.json.JsObject
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object Implicits {
   implicit class StringToAnyMapWrapper(val map: Map[String, Any]) extends AnyVal {
-    def mapToJson: Map[String, JsValue] = Utilities.mapToJson(map)
+    def mapToJson: JsObject = Utilities.mapToJson(map)
   }
 
   implicit class SequenceWrapper[A](val seq: Seq[A]) extends AnyVal {

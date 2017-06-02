@@ -4,7 +4,7 @@ import java.util.concurrent.Executors
 
 import akka.dispatch.MonitorableThreadFactory
 import org.slf4j.LoggerFactory
-import spray.json.{JsNumber, JsObject, JsString, JsValue}
+import spray.json.{JsArray, JsNumber, JsObject, JsString, JsValue}
 
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
@@ -88,17 +88,25 @@ object Utilities {
     tryAndCleanup(resource)(work)(_.close())
   }
 
-  def mapToJson(map: Map[String, Any]): Map[String, JsValue] = {
-    map
-      .mapValues {
-        case s: String => JsString(s)
-        case k: Int => JsNumber(k)
-        case k: java.lang.Integer => JsNumber(k)
-        case d: Double => JsNumber(d)
-        case d: java.lang.Double => JsNumber(d)
-        case l: Long => JsNumber(l)
-        case l: java.lang.Long => JsNumber(l)
-      }
-      .mapValues(_.asInstanceOf[JsValue])
+  def mapToJson(map: Map[String, Any]): JsObject = {
+    JsObject(map.mapValues(anyToJson))
+  }
+
+  def seqToJson(s: Seq[Any]): JsArray = {
+    JsArray(s.map(anyToJson).toVector)
+  }
+
+  def anyToJson(a: Any): JsValue = a match {
+    case s: String => JsString(s)
+    case k: Int => JsNumber(k)
+    case k: java.lang.Integer => JsNumber(k)
+    case l: Long => JsNumber(l)
+    case l: java.lang.Long => JsNumber(l)
+    case f: Float => JsNumber(f.toDouble)
+    case f: java.lang.Float => JsNumber(f.toDouble)
+    case d: Double => JsNumber(d)
+    case d: java.lang.Double => JsNumber(d)
+    case s: Seq[Any] => seqToJson(s)
+    case m: Map[String, Any] => mapToJson(m)
   }
 }
