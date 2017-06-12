@@ -68,7 +68,7 @@ abstract class RmqLinksQueueBase(
     currentRequests
       .remove(uri.toString())
       .map { case (tag, ref) =>
-        askChannel(Amqp.Reject(tag, requeue = false))
+        askChannel(Amqp.Ack(tag))
           .flatMap(_ => enqueue(ref))
       }
       .getOrElse {

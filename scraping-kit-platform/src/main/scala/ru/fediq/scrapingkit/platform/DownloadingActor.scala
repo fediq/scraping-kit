@@ -157,6 +157,7 @@ class DownloadingActor(
   }
 
   private def handleFailure(ref: PageRef, reason: String) = {
+    queueingActor ! ref.fail(reason)
     cacheStoreTimer.timeFuture(cache.storeFailure(ref, reason)).pipeFailures
   }
 }
