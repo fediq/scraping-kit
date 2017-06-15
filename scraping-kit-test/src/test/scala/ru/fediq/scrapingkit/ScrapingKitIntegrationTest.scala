@@ -4,7 +4,7 @@ import java.nio.file.{Files, Path}
 import java.util.concurrent.TimeUnit
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.{HttpMethods, Uri}
 import com.codahale.metrics.Slf4jReporter
 import com.codahale.metrics.Slf4jReporter.LoggingLevel
 import com.typesafe.config.ConfigFactory
@@ -46,7 +46,7 @@ class ScrapingKitIntegrationTest extends FlatSpec with BeforeAndAfter {
     val exporter = new JsonLinesFeedExporter(tempPath + "/output,jsonl")
 
     val reactor = new ScrapingKitReactor(linksQueue, linksHistory, pageCache, exporter, scrapers)
-    val f = linksQueue.enqueue(PageRef(Uri("http://quotes.toscrape.com/"), scraperName))
+    val f = linksQueue.enqueue(PageRef(Uri("http://quotes.toscrape.com/"), HttpMethods.GET, scraperName))
     Await.result(f, 10 seconds)
 
     Slf4jReporter

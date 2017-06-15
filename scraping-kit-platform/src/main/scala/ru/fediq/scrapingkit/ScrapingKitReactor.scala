@@ -1,11 +1,13 @@
 package ru.fediq.scrapingkit
 
 import akka.actor.{ActorSystem, Props}
+import akka.http.scaladsl.model.Uri
 import akka.routing.RoundRobinPool
 import com.typesafe.scalalogging.StrictLogging
 import net.ceedubs.ficus.Ficus._
 import net.ceedubs.ficus.readers.ArbitraryTypeReader._
 import ru.fediq.scrapingkit.backend.{FeedExporter, LinksHistory, LinksQueue, PageCache}
+import ru.fediq.scrapingkit.model.PageRef
 import ru.fediq.scrapingkit.platform._
 import ru.fediq.scrapingkit.scraper.Scraper
 
@@ -16,7 +18,8 @@ class ScrapingKitReactor(
   linksHistory: LinksHistory,
   pageCache: PageCache,
   exporter: FeedExporter,
-  scrapers: Map[String, Scraper]
+  scrapers: Map[String, Scraper],
+  redirectFilter: Option[(PageRef, Uri) => Boolean] = None
 )(implicit val system: ActorSystem)
   extends AnyRef with AutoCloseable with StrictLogging {
 
@@ -31,7 +34,7 @@ class ScrapingKitReactor(
 
   val downloadingActor = system
     .actorOf(
-      Props(new DownloadingActor(pageCache, config)),
+      Props(new DownloadingActor(pageCache, config, redirectFilter)),
       "downloading"
     )
 

@@ -46,7 +46,7 @@ abstract class RmqLinksQueueBase(
     c
   }
 
-  implicit val SerializedPageRefFormat = jsonFormat4(SerializedPageRef)
+  implicit val SerializedPageRefFormat = jsonFormat5(SerializedPageRef)
 
   override implicit val dispatcher = Utilities.singleDaemonDispatcher("links-queue")
 

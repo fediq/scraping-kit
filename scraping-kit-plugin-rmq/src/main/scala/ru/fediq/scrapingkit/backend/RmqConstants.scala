@@ -1,6 +1,6 @@
 package ru.fediq.scrapingkit.backend
 
-import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.{HttpMethods, Uri}
 import ru.fediq.scrapingkit.model.PageRef
 
 object RmqConstants {
@@ -10,11 +10,18 @@ object RmqConstants {
 
   case class SerializedPageRef(
     uri: String,
+    method: String,
     scraper: String,
     depth: Int,
     context: Map[String, String]
   ) {
-    def deserialize(): PageRef = PageRef(Uri(uri), scraper, depth, context)
+    def deserialize(): PageRef = PageRef(
+      Uri(uri),
+      HttpMethods.getForKey(method).getOrElse(HttpMethods.GET),
+      scraper,
+      depth,
+      context
+    )
   }
 
 }

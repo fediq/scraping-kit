@@ -4,7 +4,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, StandardOpenOption}
 
-import akka.http.scaladsl.model.{ContentType, HttpEntity, StatusCode, Uri}
+import akka.http.scaladsl.model._
 import akka.util.ByteString
 import org.apache.commons.codec.binary.Base64
 import org.apache.commons.codec.digest.DigestUtils
@@ -38,6 +38,9 @@ trait PageCache extends AutoCloseable {
   implicit def dispatcher: ExecutionContextExecutor = ExecutionContext.global
 
   def storeFetch(ref: PageRef, time: DateTime, status: StatusCode, body: HttpEntity.Strict): Future[Any] = {
+    if (ref.method != HttpMethods.GET) {
+      return Future.successful()
+    }
     val lastUri = ref.lastUri
     val redirectsFutures = ref.redirectSteps.map { uri =>
       store(uri, CachedRedirect(lastUri, time))
@@ -50,6 +53,9 @@ trait PageCache extends AutoCloseable {
   }
 
   def storeFailure(ref: PageRef, failure: String): Future[Any] = {
+    if (ref.method != HttpMethods.GET) {
+      return Future.successful()
+    }
     val time: DateTime = DateTime.now()
     val lastUri = ref.lastUri
     val redirectsFutures = ref.redirectSteps.map { uri =>

@@ -5,17 +5,18 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.Location
 import akka.pattern.pipe
 import akka.stream.ActorMaterializer
+import ru.fediq.scrapingkit.ScrapingKitConfig
 import ru.fediq.scrapingkit.backend._
 import ru.fediq.scrapingkit.model.PageRef
 import ru.fediq.scrapingkit.util.Metrics
-import ru.fediq.scrapingkit.ScrapingKitConfig
 
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success}
 
 class DownloadingActor(
   cache: PageCache,
-  config: ScrapingKitConfig
+  config: ScrapingKitConfig,
+  redirectFilter: Option[(PageRef, Uri) => Boolean] = None
 ) extends ScrapingKitActor with Metrics {
 
   import DownloadingActor._
@@ -32,6 +33,7 @@ class DownloadingActor(
   private val cacheRedirectsMeter = metrics.meter("cacheRedirectsRate")
   private val cacheFailuresMeter = metrics.meter("cacheFailuresRate")
   private val downloadedRedirectsMeter = metrics.meter("downloadedRedirectsRate")
+  private val suppressedRedirectsMeter = metrics.meter("suppressedRedirectsRate")
   private val downloadedPagesMeter = metrics.meter("downloadedPagesRate")
 
   private val cacheLoadTimer = metrics.timer("cacheLoadTime")
@@ -54,6 +56,8 @@ class DownloadingActor(
         handleFailure(ref, "Too deep")
       } else if (ref.redirectsChain.size > config.maxCrawlingRedirects) {
         handleFailure(ref, s"Too many redirects: ${ref.redirectsChain}")
+      } else if (ref.method != HttpMethods.GET) {
+        self ! CacheCheckResult(ref, None) // Only GETs could be cached
       } else {
         cacheLoadTimer.timeFuture(
           cache
@@ -88,14 +92,13 @@ class DownloadingActor(
 
       startResponseTimer.timeFuture(
         http
-          .singleRequest(HttpRequest(uri = ref.lastUri))
+          .singleRequest(HttpRequest(uri = ref.lastUri, method = ref.method))
           .map(resp => PageRefAndResponse(ref, resp))
           .recover {
             case NonFatal(th) => PageRefAndFailure(ref, th)
           }
           .pipeTo(self)
       )
-    // TODO handle timeouts and failures
 
     case PageRefAndResponse(ref, response) =>
       log.debug(s"Downloaded ${ref.lastUri} (${response.status})")
@@ -104,10 +107,15 @@ class DownloadingActor(
           response.header[Location] match {
             case Some(location) =>
               val normalizedLocation = location.uri.resolvedAgainst(ref.lastUri)
-              log.debug(s"Redirect from ${ref.lastUri} to $normalizedLocation")
-              downloadedRedirectsMeter.mark()
-
-              self ! ref.chain(normalizedLocation)
+              if (redirectFilter.isEmpty || redirectFilter.get.apply(ref, normalizedLocation)) {
+                log.debug(s"Redirect from ${ref.lastUri} to $normalizedLocation")
+                downloadedRedirectsMeter.mark()
+                self ! ref.chain(normalizedLocation)
+              } else {
+                log.debug(s"Redirect from ${ref.lastUri} to $normalizedLocation suppressed by filter")
+                suppressedRedirectsMeter.mark()
+                handleFailure(ref, "Redirect suppressed")
+              }
 
             case None =>
               handleFailure(ref, "No location in redirect")

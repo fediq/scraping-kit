@@ -42,7 +42,7 @@ class HtmlCrawlingScraper(name: String) extends HtmlScraper {
     document
       .select("a")
       .flatMap(_.maybeHref)
-      .map(uri => DownloadRequest(uri, name))
+      .map(uri => DownloadRequest(uri, name, context))
   }
 }
 
@@ -50,14 +50,22 @@ trait JsoupScrapingHelper extends WrapAsScala {
 
   implicit class ElementWrapper(val e: Element) {
     def maybeHref: Option[Uri] = {
-      Option(e.attr("abs:href"))
-        .flatMap { href =>
-          Try(Uri(href))
-            .toOption
-        }
+      Option(e.absUrl("href"))
+        .flatMap(tryParseUri)
+    }
+
+    def maybeFormAction: Option[Uri] = {
+      Option(e.absUrl("action"))
+        .flatMap(tryParseUri)
+    }
+
+    def maybeFormMethod: Option[HttpMethod] = {
+      Option(e.attr("method"))
+        .flatMap(method => HttpMethods.getForKey(method.trim.toUpperCase))
     }
   }
 
+  def tryParseUri(s: String) = Try(Uri(s)).toOption
 }
 
 class ScrapingException(message: String = null, cause: Throwable = null) extends Exception(message, cause)

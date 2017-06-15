@@ -61,7 +61,7 @@ class QueueingActor(
 
   def busySlots: Int = runningRequests.values.foldLeft(0)(_ + _.size)
 
-  def freeSlots: Int = config.maxConcurrentRequests - busySlots
+  def freeSlots: Int = math.max(0, config.maxConcurrentRequests - busySlots)
 
   def domainSlots: Int = runningRequests.size
 

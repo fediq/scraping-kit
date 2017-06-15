@@ -1,12 +1,17 @@
 package ru.fediq.scrapingkit.scraper
 
-import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.{HttpMethod, HttpMethods, Uri}
 import ru.fediq.scrapingkit.util.Implicits._
 import spray.json._
 
 sealed trait Scraped
 
-case class DownloadRequest(uri: Uri, scraperName: String, context: Map[String, String] = Map.empty) extends Scraped
+case class DownloadRequest(
+  uri: Uri,
+  scraperName: String,
+  context: Map[String, String] = Map.empty,
+  method: HttpMethod = HttpMethods.GET
+) extends Scraped
 
 trait ScrapedEntity extends Scraped {
   def dump: String

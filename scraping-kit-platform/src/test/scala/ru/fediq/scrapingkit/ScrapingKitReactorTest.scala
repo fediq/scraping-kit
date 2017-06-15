@@ -3,7 +3,7 @@ package ru.fediq.scrapingkit
 import java.util.concurrent.TimeUnit
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.{HttpMethods, Uri}
 import com.codahale.metrics.Slf4jReporter
 import com.codahale.metrics.Slf4jReporter.LoggingLevel
 import com.typesafe.config.ConfigFactory
@@ -29,7 +29,7 @@ class ScrapingKitReactorTest extends FlatSpec {
     val exporter = new NoOpFeedExporter()
 
     val reactor = new ScrapingKitReactor(linksQueue, linksHistory, pageCache, exporter, scrapers)
-    linksQueue.enqueue(PageRef(Uri("http://quotes.toscrape.com/"), scraperName))
+    linksQueue.enqueue(PageRef(Uri("http://quotes.toscrape.com/"), HttpMethods.GET, scraperName))
 
     Slf4jReporter
       .forRegistry(Metrics.metricRegistry)

@@ -39,10 +39,10 @@ class ScrapingActor(
             case Success(scraped) =>
               val downloadRequests = scraped
                 .flatMap {
-                  case DownloadRequest(uri, scraperName, ctx) =>
+                  case DownloadRequest(uri, scraperName, ctx, method) =>
                     val clearUri = uri.withoutFragment
                     if (scrapers.contains(scraperName) && clearUri.authority.nonEmpty) {
-                      Seq(DownloadRequest(clearUri, scraperName, ctx))
+                      Seq(DownloadRequest(clearUri, scraperName, ctx, method))
                     } else {
                       Nil
                     }
@@ -57,18 +57,23 @@ class ScrapingActor(
               if (downloadRequests.nonEmpty && ref.depth < config.maxCrawlingDepth) {
                 downloadRequests.foreach { req =>
                   log.debug(s"Scraped download request from ${ref.lastUri} to ${req.uri}")
-                  queueingActor ! PageToEnqueue(PageRef(req.uri, req.scraperName, ref.depth + 1, req.context))
+                  queueingActor ! PageToEnqueue(PageRef(req.uri, req.method, req.scraperName, ref.depth + 1, req.context))
                 }
               } else if (downloadRequests.nonEmpty) {
                 log.debug(s"${downloadRequests.size} download requests will be skipped from ${ref.lastUri}")
               }
 
-              scraped.collect {
+              scraped.foreach {
                 case entity: ScrapedEntity =>
                   // TODO filter results
+                  Try {
+                    storeTimer.timeFuture(exporter.store(entity))
+                    storeMeter.mark()
+                  }.failed.foreach { th =>
+                    log.error(th, "Failed to store results")
+                  }
 
-                  storeTimer.timeFuture(exporter.store(entity))
-                  storeMeter.mark()
+                case _ => // Noop
               }
 
               queueingActor ! ProcessedPage(ref)

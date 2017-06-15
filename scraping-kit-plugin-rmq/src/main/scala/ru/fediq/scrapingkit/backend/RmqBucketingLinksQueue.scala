@@ -81,7 +81,7 @@ class RmqBucketingLinksQueue(
   }
 
   override def enqueue(ref: PageRef) = {
-    val body = SerializedPageRef(ref.lastUri.toString(), ref.scraperName, ref.depth, ref.context)
+    val body = SerializedPageRef(ref.lastUri.toString(), ref.method.value, ref.scraperName, ref.depth, ref.context)
       .toJson
       .compactPrint
       .getBytes(StandardCharsets.UTF_8)

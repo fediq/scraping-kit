@@ -2,10 +2,11 @@ name := "scraping-kit"
 
 lazy val commonSettings = Seq(
   organization := "ru.fediq.scrapingkit",
-  version := "0.4.3-SNAPSHOT",
+  version := "0.5.0-SNAPSHOT",
   scalaVersion := "2.11.8",
   resolvers ++= Seq(
     Resolver.bintrayRepo("hajile", "maven"), // Akka DNS
+    Resolver.bintrayRepo("cakesolutions", "maven"), // Scala Kafka Client
     Resolver.bintrayRepo("fediq", "maven") // Fediq's repository
   ),
   licenses += ("MIT", url("http://opensource.org/licenses/MIT"))
@@ -38,6 +39,21 @@ lazy val `scraping-kit-plugin-rmq` = project
   .settings(commonSettings)
   .dependsOn(`scraping-kit-api`)
 
+lazy val `scraping-kit-plugin-redis` = project
+  .in(file("scraping-kit-plugin-redis"))
+  .settings(commonSettings)
+  .dependsOn(
+    `scraping-kit-api`,
+    `scraping-kit-plugin-bloom`
+  )
+
+lazy val `scraping-kit-plugin-kafka` = project
+  .in(file("scraping-kit-plugin-kafka"))
+  .settings(commonSettings)
+  .dependsOn(
+    `scraping-kit-api`
+  )
+
 lazy val `scraping-kit-test` = project
   .in(file("scraping-kit-test"))
   .settings(commonSettings ++ noPublishSettings)
@@ -55,5 +71,7 @@ lazy val `scraping-kit` = project
     `scraping-kit-platform`,
     `scraping-kit-plugin-bloom`,
     `scraping-kit-plugin-rmq`,
+    `scraping-kit-plugin-redis`,
+    `scraping-kit-plugin-kafka`,
     `scraping-kit-test`
   )

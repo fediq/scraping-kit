@@ -9,19 +9,45 @@ import ru.fediq.scrapingkit.util.{Metrics, Utilities}
 
 import scala.concurrent.Future
 
-class BloomFilterLinksHistory(
+
+class BasicBloomFilterLinksHistory(
   val expectedItems: Long,
-  val falsePositiveRate: Double,
-  val persistentPath: Option[String] = None
-) extends LinksHistory with Metrics with StrictLogging {
-  val bloomFilter = read()
+  val falsePositiveRate: Double
+) extends LinksHistory {
+  lazy val bloomFilter: BloomFilter[String] = init
 
-  override def isKnown(uri: Uri) = Future.successful(bloomFilter.mightContain(uri.toString()))
+  protected def init: BloomFilter[String] = newBloomFilter
 
-  override def addKnown(uri: Uri) = Future.successful {
-    bloomFilter.add(uri.toString())
-    true
+  protected def newBloomFilter: BloomFilter[String] = BloomFilter[String](expectedItems, falsePositiveRate)
+
+  override def isKnown(uri: Uri): Future[Boolean] = Future.successful {
+    isKnownSync(uri.toString())
   }
+
+  override def addKnown(uri: Uri): Future[Any] = Future.successful {
+    addKnownSync(uri.toString())
+  }
+
+  def isKnownSync(uri: String) = bloomFilter.mightContain(uri)
+
+  def addKnownSync(uri: String) = bloomFilter.add(uri)
+
+  def fromBytes(bytes: Array[Byte]) = {
+    BloomFilter.readFrom[String](new ByteArrayInputStream(bytes))
+  }
+
+  def toBytes(bf: BloomFilter[String]): Array[Byte] = {
+    val os = new ByteArrayOutputStream()
+    bf.writeTo(os)
+    os.toByteArray
+  }
+}
+
+class BloomFilterLinksHistory(
+  expectedItems: Long,
+  falsePositiveRate: Double,
+  val persistentPath: Option[String] = None
+) extends BasicBloomFilterLinksHistory(expectedItems, falsePositiveRate) with Metrics with StrictLogging {
 
   override def close() = {
     persistentPath.foreach { path =>
@@ -30,18 +56,18 @@ class BloomFilterLinksHistory(
     }
   }
 
-  private def read() = {
+  override protected def init = {
     persistentPath
       .fold {
         logger.warn("History filter persistence disabled")
-        BloomFilter[String](expectedItems, falsePositiveRate)
+        newBloomFilter
       } { path =>
         if (new File(path).exists()) {
           logger.info(s"Reading persisted history filter from $path")
           Utilities.tryAndClose(new BufferedInputStream(new FileInputStream(path)))(BloomFilter.readFrom[String]).get
         } else {
           logger.info(s"No persisted history found at $path - initializing empty filter")
-          BloomFilter[String](expectedItems, falsePositiveRate)
+          newBloomFilter
         }
       }
   }

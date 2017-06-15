@@ -1,3 +1,10 @@
+### 0.5.0 (2017.06.14)
+* Support for various HTTP methods (PageRef model changed)
+* Redis-based links queue and links history
+* Kafka feeds exporter
+* Redirect filtering
+* Bugfixes
+
 ### 0.4.2 (2017.05.31)
 * Throttling pulls in QueueingActor
 

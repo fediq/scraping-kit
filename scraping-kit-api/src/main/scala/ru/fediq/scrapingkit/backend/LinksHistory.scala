@@ -10,10 +10,10 @@ import scala.concurrent.Future
 trait LinksHistory extends AutoCloseable {
   def isKnown(uri: Uri): Future[Boolean]
 
-  def addKnown(uri: Uri): Future[Boolean]
+  def addKnown(uri: Uri): Future[Any]
 
   override def close() = {
-    // Do nothin
+    // Do nothing
   }
 }
 
