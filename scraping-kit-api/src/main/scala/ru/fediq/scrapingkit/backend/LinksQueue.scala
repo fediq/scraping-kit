@@ -28,18 +28,11 @@ trait LinksQueue extends AutoCloseable {
     futures
   }
 
-  def drownAll(uris: Seq[Uri]): Future[Any] =  Future.sequence {
-    val futures = uris.map(drown)
-    futures
-  }
-
   def failed(uri: Uri): Future[Any]
 
   def succeed(uri: Uri): Future[Any]
 
   def enqueue(ref: PageRef): Future[Any]
-
-  def drown(uri: Uri): Future[Any]
 
   override def close() = {
     // Do nothing
@@ -74,10 +67,6 @@ class InMemoryLinksQueue(
 
   override def failed(url: Uri) = Future {
     pulled.remove(url)
-  }
-
-  override def drown(uri: Uri) = {
-    pulled.remove(uri).map(enqueue).getOrElse(Future.successful())
   }
 
   override def enqueue(ref: PageRef) = Future {

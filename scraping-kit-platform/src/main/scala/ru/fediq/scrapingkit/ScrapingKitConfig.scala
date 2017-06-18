@@ -10,7 +10,7 @@ case class ScrapingKitConfig(
   maxPullsInParallel: Int,
   logErrorsEach: Int,
   processingTimeout: FiniteDuration,
-  maxCrawlingDepth: Int,
+  maxCrawlingDepth: Double,
   maxCrawlingRedirects: Int,
   downloadTimeout: FiniteDuration,
   maxPageSize: Long,

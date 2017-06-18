@@ -6,7 +6,7 @@ case class PageRef(
   uri: Uri,
   method: HttpMethod,
   scraperName: String,
-  depth: Int = 1,
+  depth: Double = 1.0,
   context: Map[String, String] = Map.empty,
   redirectsChain: List[Uri] = Nil
 ) {

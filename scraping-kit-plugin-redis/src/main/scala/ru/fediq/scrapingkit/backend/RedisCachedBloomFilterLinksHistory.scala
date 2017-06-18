@@ -14,7 +14,6 @@ import scala.language.postfixOps
 class RedisCachedBloomFilterLinksHistory(
   expectedItems: Long,
   falsePositiveRate: Double,
-  refreshInterval: FiniteDuration,
   val redisHost: String,
   val redisPort: Int,
   val redisPassword: String,
@@ -55,11 +54,31 @@ class RedisCachedBloomFilterLinksHistory(
       }
   }
 
+  def writeToRedis: Future[Any] = {
+    val key = randomKey
+    val bytes = toBytes(bloomFilter)
+    redis
+      .set(key, ByteString(bytes), Some(600))
+      .flatMap(_ => redis.bitopOR(bitSetKey, bitSetKey, key))
+      .flatMap(_ => redis.del(key))
+  }
+
   def pushNews(uri: String): Future[Long] = {
     redis.publish(channelKey, uri)
   }
 
   override protected def init = {
     Await.result(readFromRedis, 1 minute)
+  }
+
+  override def close() = {
+    Await.result(writeToRedis, 1 minute)
+  }
+
+  def cleanup() = {
+    // TODO remove temporary keys
+    // TODO rollback local queues
+    // TODO cleanup empty site keys
+    // TODO cleanup non-existent sites from "all" list
   }
 }

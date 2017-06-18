@@ -32,18 +32,14 @@ class QueueingActor(
   private val pullTimeoutMeter = metrics.meter("pullTimeoutRate")
   private val succeedMeter = metrics.meter("succeedRate")
   private val failedMeter = metrics.meter("failedRate")
-  private val drownMeter = metrics.meter("drownRate")
-  private val runningMeter = metrics.meter("runningRate")
   private val enqueueMeter = metrics.meter("enqueueRate")
   private val enqueueNewMeter = metrics.meter("enqueueNewRate")
   private val enqueueVisitedMeter = metrics.meter("enqueueVisitedRate")
-  private val drownShareHist = metrics.histogram("drownShare")
 
   private val queueFailedAllTimer = metrics.timer("failedAllTime")
   private val queueFailedTimer = metrics.timer("failedTime")
   private val queueSucceedTimer = metrics.timer("succeedTime")
   private val queueEnqueueTimer = metrics.timer("enqueueTime")
-  private val queueDrownTimer = metrics.timer("drownTime")
   private val queuePullTimer = metrics.timer("pullTime")
   private val historyIsKnownTimer = metrics.timer("isKnownTime")
   private val historyAddKnownTimer = metrics.timer("addKnownTime")
@@ -67,16 +63,10 @@ class QueueingActor(
 
   def pullSlots = runningPulls.size
 
-  def tryAdd(ref: PageRef): Boolean = {
+  def addRunning(ref: PageRef): Unit = {
     val domain = ref.uri.authority.host.address()
-    val numRequestsForDomain = runningRequests.get(domain).map(_.size).getOrElse(0)
-    if (numRequestsForDomain >= config.maxConcurrentRequestsPerDomain) {
-      false
-    } else {
-      val requestsForDomain = runningRequests.getOrElseUpdate(domain, mutable.Map())
-      requestsForDomain.put(ref.uri, System.currentTimeMillis() + config.processingTimeout.toMillis)
-      true
-    }
+    val requestsForDomain = runningRequests.getOrElseUpdate(domain, mutable.Map())
+    requestsForDomain.put(ref.uri, System.currentTimeMillis() + config.processingTimeout.toMillis)
   }
 
   def clearOutdated(): Seq[Uri] = {
@@ -129,13 +119,12 @@ class QueueingActor(
 
         val free = freeSlots
         if (free > 0) {
-          val toPull = (free * (100.0 / (100.0 - drownShareHist.mean))).toInt
           nextPullId += 1
           val pullId = nextPullId
           runningPulls.add(pullId)
-          log.info(s"Want $free items, pulling $toPull (#$pullId)")
+          log.info(s"Pulling $free items (#$pullId)")
           queuePullTimer
-            .timeFuture(queue.pull(toPull))
+            .timeFuture(queue.pull(free))
             .map(refs => PulledBatch(refs, free, pullId))
             .pipeTo(self)
           context.system.scheduler.scheduleOnce(config.pullingTimeout, self, PullTimedOut(pullId))
@@ -147,15 +136,12 @@ class QueueingActor(
     case PulledBatch(refs, free, id) =>
       pulledMeter.mark(refs.size)
       runningPulls.remove(id)
-      val (toRun, toDrown) = refs.partition(tryAdd)
-      log.info(s"Pulled ${refs.size} items, wanted $free, downloading ${toRun.size}, drowning ${toDrown.size} (#$id)")
-      drownShareHist += (if (refs.nonEmpty) 100 * toDrown.size / refs.size else 0)
+      log.info(s"Wanted $free, pulled ${refs.size} (#$id)")
 
-      runningMeter.mark(toRun.size)
-      toRun.foreach(req => downloadingActor ! req)
-
-      drownMeter.mark(toDrown.size)
-      queueDrownTimer.timeFuture(queue.drownAll(toDrown.map(_.uri))).pipeFailures
+      refs.foreach { req =>
+        addRunning(req)
+        downloadingActor ! req
+      }
 
     case PullTimedOut(id) =>
       if (runningPulls.contains(id)) {

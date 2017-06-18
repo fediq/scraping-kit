@@ -15,7 +15,7 @@ trait Scraper {
 }
 
 trait HtmlScraper extends Scraper with JsoupScrapingHelper {
-  def scrape(document: Document, context: Map[String, String]): Seq[Scraped]
+  def scrape(uri: Uri, document: Document, context: Map[String, String]): Seq[Scraped]
 
   def postProcess(scraped: Seq[Scraped], uri: Uri, statusCode: StatusCode, context: Map[String, String]): Seq[Scraped] = scraped
 
@@ -25,7 +25,7 @@ trait HtmlScraper extends Scraper with JsoupScrapingHelper {
         val charset = body.contentType.charsetOption.map(_.nioCharset).getOrElse(StandardCharsets.UTF_8)
         val bodyString = body.data.decodeString(charset)
         val document = Jsoup.parse(bodyString, uri.toString())
-        val scraped = scrape(document, context)
+        val scraped = scrape(uri, document, context)
         postProcess(scraped, uri, status, context)
 
       case (s: StatusCodes.Success, mediaType) =>
@@ -38,7 +38,7 @@ trait HtmlScraper extends Scraper with JsoupScrapingHelper {
 }
 
 class HtmlCrawlingScraper(name: String) extends HtmlScraper {
-  override def scrape(document: Document, context: Map[String, String]) = {
+  override def scrape(uri: Uri, document: Document, context: Map[String, String]) = {
     document
       .select("a")
       .flatMap(_.maybeHref)

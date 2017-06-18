@@ -10,7 +10,8 @@ case class DownloadRequest(
   uri: Uri,
   scraperName: String,
   context: Map[String, String] = Map.empty,
-  method: HttpMethod = HttpMethods.GET
+  method: HttpMethod = HttpMethods.GET,
+  depthInc: Double = 1.0
 ) extends Scraped
 
 trait ScrapedEntity extends Scraped {

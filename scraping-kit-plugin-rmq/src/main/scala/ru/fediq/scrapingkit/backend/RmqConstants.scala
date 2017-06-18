@@ -12,7 +12,7 @@ object RmqConstants {
     uri: String,
     method: String,
     scraper: String,
-    depth: Int,
+    depth: Double,
     context: Map[String, String]
   ) {
     def deserialize(): PageRef = PageRef(

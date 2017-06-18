@@ -1,5 +1,7 @@
-### 0.5.0 (2017.06.14)
-* Support for various HTTP methods (PageRef model changed)
+### 0.5.0 (2017.06.18)
+* PageRef model changed - variable HTTP methods and depth increment
+* HtmlCrawler SPI changed - explicit URI provision
+* Links Queue API changed - drowning functionality removed
 * Redis-based links queue and links history
 * Kafka feeds exporter
 * Redirect filtering

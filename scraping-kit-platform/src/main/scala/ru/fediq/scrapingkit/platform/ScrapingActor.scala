@@ -39,10 +39,10 @@ class ScrapingActor(
             case Success(scraped) =>
               val downloadRequests = scraped
                 .flatMap {
-                  case DownloadRequest(uri, scraperName, ctx, method) =>
-                    val clearUri = uri.withoutFragment
-                    if (scrapers.contains(scraperName) && clearUri.authority.nonEmpty) {
-                      Seq(DownloadRequest(clearUri, scraperName, ctx, method))
+                  case req: DownloadRequest =>
+                    val cleanUri = req.uri.withoutFragment
+                    if (scrapers.contains(req.scraperName) && cleanUri.authority.nonEmpty && req.depthInc > 0) {
+                      Seq(req.copy(uri = cleanUri))
                     } else {
                       Nil
                     }
@@ -54,13 +54,16 @@ class ScrapingActor(
 
               // TODO filter urls
 
-              if (downloadRequests.nonEmpty && ref.depth < config.maxCrawlingDepth) {
+              if (downloadRequests.nonEmpty) {
                 downloadRequests.foreach { req =>
-                  log.debug(s"Scraped download request from ${ref.lastUri} to ${req.uri}")
-                  queueingActor ! PageToEnqueue(PageRef(req.uri, req.method, req.scraperName, ref.depth + 1, req.context))
+                  val newDepth = ref.depth + req.depthInc
+                  if (newDepth <= config.maxCrawlingDepth) {
+                    log.debug(s"Scraped download request from ${ref.lastUri} to ${req.uri}")
+                    queueingActor ! PageToEnqueue(PageRef(req.uri, req.method, req.scraperName, newDepth, req.context))
+                  } else {
+                    log.debug(s"Request from ${ref.lastUri} to ${req.uri} will be skipped")
+                  }
                 }
-              } else if (downloadRequests.nonEmpty) {
-                log.debug(s"${downloadRequests.size} download requests will be skipped from ${ref.lastUri}")
               }
 
               scraped.foreach {

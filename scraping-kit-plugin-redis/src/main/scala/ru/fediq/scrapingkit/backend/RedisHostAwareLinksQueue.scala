@@ -116,23 +116,6 @@ class RedisHostAwareLinksQueue(
 
   override def failedAll(uris: Seq[Uri]) = batchCommit(uris)
 
-  override def drownAll(uris: Seq[Uri]): Future[Any] = {
-    uris.size match {
-      case 0 => Future.successful()
-      case 1 => redis
-        .hget[SerializedPageRef](clientQueueKey, uris.head.toString)
-        .flatMap { found =>
-          found.map(ref => enqueue(ref.deserialize())).getOrElse(Future.successful()).flatMap(_ => batchCommit(uris))
-        }
-      case _ => redis
-        .hmget[SerializedPageRef](clientQueueKey, uris.map(_.toString): _*)
-        .flatMap { found =>
-          enqueueAll(found.flatten.map(_.deserialize())).flatMap(_ => batchCommit(uris))
-        }
-    }
-
-  }
-
   override def enqueue(ref: PageRef) = enqueueAll(Seq(ref))
 
   override def enqueueAll(refs: Seq[PageRef]): Future[Any] = {
@@ -148,8 +131,6 @@ class RedisHostAwareLinksQueue(
       }
     addHostsFuture.flatMap(_ => Future.sequence(addSitesFuture))
   }
-
-  override def drown(uri: Uri): Future[Any] = drownAll(Seq(uri))
 
   protected def commit(uri: Uri): Future[Any] = batchCommit(Seq(uri))
 
@@ -181,7 +162,7 @@ object RedisHostAwareLinksQueue {
     uri: String,
     method: String,
     scraper: String,
-    depth: Int,
+    depth: Double,
     context: Map[String, String]
   ) {
     def deserialize(): PageRef = PageRef(

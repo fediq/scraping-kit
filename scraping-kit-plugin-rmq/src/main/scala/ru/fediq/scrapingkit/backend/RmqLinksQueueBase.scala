@@ -52,8 +52,6 @@ abstract class RmqLinksQueueBase(
 
   val currentRequests = mutable.Map[String, (Long, PageRef)]()
 
-  override def drownAll(uris: Seq[Uri]) = uris.chainFutures(drown)
-
   override def succeedAll(uris: Seq[Uri]) = uris.chainFutures(succeed)
 
   override def failedAll(uris: Seq[Uri]) = uris.chainFutures(failed)
@@ -63,19 +61,6 @@ abstract class RmqLinksQueueBase(
   override def failed(uri: Uri) = commit(uri)
 
   override def succeed(uri: Uri) = commit(uri)
-
-  def drown(uri: Uri): Future[Any] = {
-    currentRequests
-      .remove(uri.toString())
-      .map { case (tag, ref) =>
-        askChannel(Amqp.Ack(tag))
-          .flatMap(_ => enqueue(ref))
-      }
-      .getOrElse {
-        logger.warn(s"No running request for $uri")
-        Future.successful()
-      }
-  }
 
   protected def commit(uri: Uri): Future[Any] = {
     currentRequests
